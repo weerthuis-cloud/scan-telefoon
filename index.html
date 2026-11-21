@@ -131,8 +131,9 @@ function zetStatus(){
 }
 
 /* Startscherm: pakket, klas, opdracht */
+var APP_VERSIE = '0.1.1';
 function schermStart(){
-  var h = '<h1>Scan telefoon</h1>';
+  var h = '<h1>Scan telefoon <span class="klein" style="font-weight:400">v' + APP_VERSIE + '</span></h1>';
   if (!data.pakket){
     h += '<p class="zacht">Kies het lespakket dat je op de Mac hebt gemaakt. Het staat in je iCloud-map.</p>';
     h += '<label class="k hoofd bestand">Kies lespakket<input type="file" id="pakketkies" accept=".json,application/json"></label>';
