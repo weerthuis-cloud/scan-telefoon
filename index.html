@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scan">
+<title>Scan telefoon</title>
+<style>
+:root{--blauw:#2563EB;--navy:#0F172A;--oranje:#F59E0B;--vlak:#F3F6FA;--lijn:#D5DDE8;--goed:#15803D;--goedz:#DCFCE7;--let:#92400E;--letz:#FEF3C7;--fout:#B91C1C;--foutz:#FEE2E2;--zacht:#475569}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--vlak);color:var(--navy);font:16px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:520px;margin:0 auto;padding:max(14px,env(safe-area-inset-top)) 14px 48px}
+h1{font-size:22px;margin:6px 0 4px}
+p{margin:6px 0}
+.klein{font-size:13px;color:var(--zacht)}
+.scanstatus{font-size:13px;color:var(--zacht);height:20px;line-height:20px;margin:4px 0 0;white-space:nowrap;overflow:hidden}
+.titel{font-size:18px;font-weight:700;line-height:1.25}
+.kop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.teller{font-size:22px;font-weight:700;white-space:nowrap}
+.balk{height:6px;border-radius:3px;background:var(--lijn);margin:8px 0 12px;overflow:hidden}
+.balk i{display:block;height:100%;background:var(--blauw)}
+.kaart{background:#fff;border:1px solid var(--lijn);border-radius:16px;padding:16px;margin:12px 0}
+.naam{font-size:30px;font-weight:700;margin:2px 0 12px;line-height:1.15}
+.k{display:block;width:100%;min-height:52px;border:1px solid var(--lijn);background:#fff;border-radius:14px;font:inherit;font-weight:600;color:var(--navy);padding:12px 10px;margin:0;text-align:center;touch-action:manipulation}
+.k:active{transform:scale(.98)}
+.k.hoofd{background:var(--navy);color:#fff;border-color:var(--navy)}
+.k.oranje{background:var(--oranje);border-color:var(--oranje)}
+.k.ok{background:var(--goedz);border-color:#86EFAC;color:var(--goed)}
+.k.nt{background:var(--letz);border-color:#FCD34D;color:var(--let)}
+.k.gekozen{outline:3px solid var(--blauw);outline-offset:1px}
+.k.klein2{min-height:44px;font-weight:500;font-size:14px}
+.rij2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.rij5{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0 4px}
+.rij5 .k{font-size:20px;min-height:60px;padding:8px 0}
+.bestand{position:relative;overflow:hidden}
+.bestand input{position:absolute;inset:0;opacity:0;width:100%;height:100%}
+.scanveld{width:100%;min-height:52px;border:2px dashed var(--blauw);border-radius:14px;padding:0 14px;font:inherit;background:#fff;color:var(--navy)}
+.scanveld.uit{border-color:var(--fout);background:var(--foutz)}
+.toast{margin:10px 0;padding:10px 12px;border-radius:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.toast.ok{background:var(--goedz);color:var(--goed)}
+.toast.fout{background:var(--foutz);color:var(--fout)}
+.toast button{border:1px solid currentColor;background:transparent;color:inherit;border-radius:10px;padding:6px 10px;font:inherit;font-size:14px}
+.leeg{text-align:center;color:var(--zacht);padding:34px 0 26px;font-size:17px}
+.regel{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--lijn)}
+details{margin:12px 0}
+summary{font-weight:600;padding:8px 0}
+.lijst .k{text-align:left;margin:6px 0;min-height:46px;font-weight:500}
+label{display:block;font-size:13px;color:var(--zacht);margin:10px 0 4px}
+input[type=text],input[type=date],select{width:100%;min-height:46px;border:1px solid var(--lijn);border-radius:12px;padding:0 12px;font:inherit;background:#fff}
+.fouttekst{color:var(--fout);font-size:14px;margin:6px 0}
+.pil{display:inline-block;font-size:12px;padding:2px 8px;border-radius:8px;background:var(--lijn);color:var(--navy);margin-left:6px}
+.zacht{color:var(--zacht)}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+'use strict';
+var SLEUTEL = 'telefoonscanner-v1';
+var data = laad();
+var scherm = 'start';
+var startKlas = null;
+var kaart = null;
+var toast = null;
+var nogOpen = false;
+var nieuwFout = '';
+var audio = null;
+
+function laad(){
+  try { var t = localStorage.getItem(SLEUTEL); if (t){ var d = JSON.parse(t); d.scans = d.scans || {}; d.modi = d.modi || {}; return d; } } catch(e){}
+  return { pakket:null, werk:null, scans:{}, modi:{}, geluid:true, laatste:null };
+}
+function bewaar(){
+  try { localStorage.setItem(SLEUTEL, JSON.stringify(data)); }
+  catch(e){ toast = { soort:'fout', tekst:'Bewaren in de browser lukt niet. Bewaar nu het bestand.' }; }
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function vandaag(){ var d = new Date(); return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); }
+function datumNL(iso){ var p = String(iso||'').split('-'); return p.length === 3 ? p[2] + '-' + p[1] : iso; }
+function schoon(s){ return String(s||'').replace(/[;\r\n\t]+/g, ' ').trim(); }
+
+var LABELS = {
+  vink:  { v:'Akkoord', o:'Nog niet' },
+  omvrg: { o:'Onvoldoende', m:'Matig', v:'Voldoende', r:'Ruim voldoende', g:'Goed' }
+};
+var EXTRA = { a:'Afwezig', '0':'Niet gemaakt' };
+function label(w, type){ if (EXTRA[w]) return EXTRA[w]; var t = LABELS[type] || LABELS.omvrg; return t[w] || w; }
+
+function klasObj(){ return data.pakket ? data.pakket.klassen.find(function(k){ return k.naam === data.werk.klas; }) : null; }
+function sleutelVan(w){ return w.klas + '|' + w.opdracht + '|' + w.datum; }
+function scansNu(){ var s = sleutelVan(data.werk); return data.scans[s] || (data.scans[s] = {}); }
+function leerlingMetCode(k, code){ return k.leerlingen.find(function(l){ return l.code === code; }) || null; }
+
+function ontgrendel(){
+  if (!data.geluid) return;
+  try {
+    if (!audio){ var A = window.AudioContext || window.webkitAudioContext; if (A) audio = new A(); }
+    if (audio && audio.state === 'suspended') audio.resume();
+  } catch(e){}
+}
+function piep(hoog){
+  if (!data.geluid || !audio) return;
+  try {
+    var o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = hoog ? 880 : 220; o.type = 'sine';
+    g.gain.value = 0.12; o.connect(g); g.connect(audio.destination);
+    o.start(); o.stop(audio.currentTime + (hoog ? 0.08 : 0.3));
+  } catch(e){}
+}
+
+function render(){
+  var app = document.getElementById('app');
+  if (scherm === 'scan' && data.werk && klasObj()) app.innerHTML = schermScan();
+  else if (scherm === 'afronden' && data.werk && klasObj()) app.innerHTML = schermAfronden();
+  else { scherm = 'start'; app.innerHTML = schermStart(); }
+  focusScan();
+}
+function focusScan(){
+  var f = document.getElementById('scanveld');
+  if (!f) return;
+  try { f.focus({ preventScroll:true }); } catch(e){}
+  zetStatus();
+}
+function zetStatus(){
+  var f = document.getElementById('scanveld'), s = document.getElementById('scanstatus');
+  if (!f || !s) return;
+  var aan = document.activeElement === f;
+  f.classList.toggle('uit', !aan);
+  s.textContent = aan ? 'Scanner luistert' : 'Scanner luistert niet: tik op het vak';
+}
+
+/* Startscherm: pakket, klas, opdracht */
+function schermStart(){
+  var h = '<h1>Scan telefoon</h1>';
+  if (!data.pakket){
+    h += '<p class="zacht">Kies het lespakket dat je op de Mac hebt gemaakt. Het staat in je iCloud-map.</p>';
+    h += '<label class="k hoofd bestand">Kies lespakket<input type="file" id="pakketkies" accept=".json,application/json"></label>';
+    if (nieuwFout) h += '<p class="fouttekst">' + esc(nieuwFout) + '</p>';
+    h += '<p class="klein" style="margin-top:18px">Alleen voornamen, een initiaal en leerlingcodes staan hierin. Wis het pakket als je klaar bent.</p>';
+    return h;
+  }
+  var dagen = Math.round((Date.now() - new Date(data.pakket.gemaakt + 'T12:00:00').getTime()) / 86400000);
+  h += '<p class="klein">Lespakket van ' + esc(datumNL(data.pakket.gemaakt)) + (dagen > 7 ? ' (' + dagen + ' dagen oud, haal een nieuwe op de Mac)' : '') + '</p>';
+  if (data.werk && klasObj()){
+    var n = Object.keys(scansNu()).length;
+    h += '<div class="kaart"><div class="klein">Je was bezig met</div><div class="titel">' + esc(data.werk.opdracht) + '</div>' +
+      '<div class="klein">' + esc(data.werk.klas) + ' · ' + n + ' gescand</div>' +
+      '<button class="k hoofd" style="margin-top:10px" data-a="verder">Verder scannen</button></div>';
+  }
+  if (!startKlas){
+    h += '<p class="titel" style="margin-top:14px">Welke klas?</p><div class="rij2">';
+    data.pakket.klassen.forEach(function(k){ h += '<button class="k" data-a="klas" data-k="' + esc(k.naam) + '">' + esc(k.naam) + '<span class="pil">' + k.leerlingen.length + '</span></button>'; });
+    h += '</div>';
+  } else {
+    var k = data.pakket.klassen.find(function(x){ return x.naam === startKlas; });
+    h += '<p class="titel" style="margin-top:14px">' + esc(startKlas) + ': welke opdracht?</p><div class="lijst">';
+    (k.opdrachten || []).forEach(function(o, i){
+      var s = data.scans[startKlas + '|' + o.naam + '|' + o.datum], n = s ? Object.keys(s).length : 0;
+      h += '<button class="k" data-a="opdracht" data-i="' + i + '">' + esc(o.naam) +
+        '<span class="pil">' + (o.type === 'vink' ? 'vinken' : 'OMVRG') + '</span><span class="pil">' + esc(datumNL(o.datum)) + '</span>' +
+        (n ? '<span class="pil">' + n + ' gescand</span>' : '') + '</button>';
+    });
+    if (!(k.opdrachten || []).length) h += '<p class="zacht">Geen opdrachten in het pakket. Maak hieronder een nieuwe.</p>';
+    h += '</div><details><summary>Nieuwe opdracht</summary>' +
+      '<label for="nnaam">Naam</label><input type="text" id="nnaam" autocomplete="off">' +
+      '<label for="ntype">Beoordeling</label><select id="ntype"><option value="vink">Vinken (Akkoord of Nog niet)</option><option value="omvrg">OMVRG</option></select>' +
+      '<label for="ndatum">Datum</label><input type="date" id="ndatum" value="' + vandaag() + '">' +
+      (nieuwFout ? '<p class="fouttekst">' + esc(nieuwFout) + '</p>' : '') +
+      '<p class="klein">Een opdracht die niet in de Snelscanner is ingepland, wordt daar bij het inlezen een gewone opdracht. Plan hem liever vooraf bij Plannen.</p>' +
+      '<button class="k oranje" data-a="nieuw">Start deze opdracht</button></details>';
+    h += '<button class="k klein2" style="margin-top:10px" data-a="anderklas">Andere klas</button>';
+  }
+  h += '<details style="margin-top:26px"><summary class="zacht">Beheer</summary>' +
+    '<label class="k bestand klein2">Ander lespakket kiezen<input type="file" id="pakketkies" accept=".json,application/json"></label>' +
+    '<button class="k klein2" style="margin-top:8px" data-a="geluid">Geluid: ' + (data.geluid ? 'aan' : 'uit') + '</button>' +
+    '<button class="k klein2" style="margin-top:8px;color:var(--fout)" data-a="wispakket">Wis pakket en alle scans van deze telefoon</button></details>';
+  return h;
+}
+
+/* Scanscherm */
+function schermScan(){
+  var k = klasObj(), w = data.werk, sc = scansNu(), n = Object.keys(sc).length, N = k.leerlingen.length;
+  var h = '<div class="kop"><div><div class="klein">' + esc(w.klas) + ' · ' + esc(datumNL(w.datum)) + '</div><div class="titel">' + esc(w.opdracht) + '</div></div><div class="teller">' + n + '/' + N + '</div></div>';
+  h += '<div class="balk"><i style="width:' + (N ? Math.round(n / N * 100) : 0) + '%"></i></div>';
+  h += '<input id="scanveld" class="scanveld" type="text" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="Scan een werkblad">';
+  h += '<div id="scanstatus" class="scanstatus"></div>';
+  if (toast){
+    h += '<div class="toast ' + toast.soort + '" role="status"><span>' + esc(toast.tekst) + '</span>' +
+      (toast.soort === 'ok' && data.laatste ? '<button data-a="undo">Ongedaan</button>' : '') + '</div>';
+  }
+  if (kaart){
+    var l = leerlingMetCode(k, kaart.code), cur = sc[kaart.code];
+    h += '<div class="kaart"><div class="klein">' + (cur === undefined ? 'Gescand' : (kaart.nieuw ? 'Opgeslagen als ' + esc(label(cur, w.type)) : 'Al gescand, nu: ' + esc(label(cur, w.type)))) + '</div>' +
+      '<p class="naam">' + esc(l.naam) + '</p>' + knoppen(w.type, cur) +
+      '<button class="k klein2" style="margin-top:10px" data-a="sluit">Sluiten zonder wijziging</button></div>';
+  } else {
+    h += '<div class="leeg">Scan het volgende werkblad</div>';
+  }
+  var std = w.standaard || 'v';
+  h += '<button class="k klein2" data-a="modus">' + (w.modus === 'standaard'
+    ? 'Scan slaat meteen ' + esc(label(std, w.type)) + ' op. Tik om zelf te kiezen.'
+    : 'Je kiest zelf per leerling. Tik voor meteen ' + esc(label(std, w.type)) + ' bij de scan.') + '</button>';
+  var open = k.leerlingen.filter(function(l){ return sc[l.code] === undefined; });
+  h += '<details' + (nogOpen ? ' open' : '') + ' id="nogdetails"><summary>Nog niet gescand (' + open.length + ')</summary><div class="lijst">';
+  open.forEach(function(l){ h += '<button class="k" data-a="open" data-c="' + esc(l.code) + '">' + esc(l.naam) + '</button>'; });
+  h += '</div></details>';
+  h += '<div class="rij2"><button class="k" data-a="stop">Andere opdracht</button><button class="k hoofd" data-a="afronden">Afronden</button></div>';
+  return h;
+}
+function knoppen(type, cur){
+  var h = '';
+  function sel(w){ return cur === w ? ' gekozen' : ''; }
+  if (type === 'vink'){
+    h += '<div class="rij2"><button class="k ok' + sel('v') + '" data-a="kies" data-w="v">Akkoord</button><button class="k nt' + sel('o') + '" data-a="kies" data-w="o">Nog niet</button></div>';
+    h += '<button class="k' + sel('a') + '" data-a="kies" data-w="a">Afwezig</button>';
+  } else {
+    h += '<div class="rij5">';
+    ['o','m','v','r','g'].forEach(function(w){ h += '<button class="k' + sel(w) + '" data-a="kies" data-w="' + w + '">' + w.toUpperCase() + '</button>'; });
+    h += '</div><p class="klein" style="margin:2px 0 8px">O onvoldoende, M matig, V voldoende, R ruim voldoende, G goed</p>';
+    h += '<div class="rij2" style="margin-top:0"><button class="k' + sel('0') + '" data-a="kies" data-w="0">Niet gemaakt</button><button class="k' + sel('a') + '" data-a="kies" data-w="a">Afwezig</button></div>';
+  }
+  return h;
+}
+
+/* Afrondscherm */
+function schermAfronden(){
+  var k = klasObj(), w = data.werk, sc = scansNu(), N = k.leerlingen.length;
+  var tel = {};
+  Object.keys(sc).forEach(function(c){ tel[sc[c]] = (tel[sc[c]] || 0) + 1; });
+  var h = '<h1>Afronden</h1><p class="klein">' + esc(w.klas) + ' · ' + esc(w.opdracht) + ' · ' + esc(datumNL(w.datum)) + '</p>';
+  h += '<div class="kaart"><div class="titel">' + Object.keys(sc).length + ' van ' + N + ' gescand</div>';
+  Object.keys(tel).forEach(function(x){ h += '<div class="regel"><span>' + esc(label(x, w.type)) + '</span><b>' + tel[x] + '</b></div>'; });
+  h += '</div>';
+  var open = k.leerlingen.filter(function(l){ return sc[l.code] === undefined; });
+  if (open.length){
+    h += '<details open><summary>Niet gescand (' + open.length + ')</summary><p class="klein">Zij krijgen in de Snelscanner niets. Dat is bewust: niet gescand is niet hetzelfde als niet gemaakt.</p><div class="lijst">';
+    open.forEach(function(l){ h += '<button class="k" data-a="openuitafronden" data-c="' + esc(l.code) + '">' + esc(l.naam) + '</button>'; });
+    h += '</div></details>';
+  }
+  h += '<button class="k hoofd" style="margin-top:12px" data-a="deel">Bewaar bestand (deel of Bestanden)</button>';
+  h += '<button class="k klein2" style="margin-top:8px" data-a="download">Download bestand</button>';
+  h += '<p class="klein">Bewaar het bestand in DATABASE MAP, LVS Snelscanner, beoordelingen. De Snelscanner toont het bij het starten en laat eerst zien wat erin staat. Het bestand bevat alleen leerlingcodes, geen namen.</p>';
+  h += '<div class="rij2"><button class="k" data-a="terug">Terug naar scannen</button><button class="k" style="color:var(--fout)" data-a="klaarwis">Klaar, wis scans</button></div>';
+  return h;
+}
+
+/* Bestand */
+function bouwCsv(){
+  var k = klasObj(), w = data.werk, sc = scansNu();
+  var regels = ['klas;' + schoon(w.klas), 'opdracht;' + schoon(w.opdracht), 'datum;' + w.datum, '', 'code;waardering;notitie'];
+  k.leerlingen.forEach(function(l){ if (sc[l.code] !== undefined) regels.push(l.code + ';' + sc[l.code] + ';'); });
+  return regels.join('\r\n') + '\r\n';
+}
+function bestandsnaam(){
+  var w = data.werk;
+  return (schoon(w.klas) + ' - ' + schoon(w.opdracht) + ' - ' + w.datum + '.csv').replace(/[\\\/:*?"<>|]/g, '-');
+}
+function download(csv, naam){
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  a.download = naam; document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+function deel(){
+  var csv = bouwCsv(), naam = bestandsnaam();
+  try {
+    var f = new File([csv], naam, { type:'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files:[f] })){
+      navigator.share({ files:[f] }).catch(function(e){ if (e && e.name !== 'AbortError') download(csv, naam); });
+      return;
+    }
+  } catch(e){}
+  download(csv, naam);
+}
+
+/* Scannen en beoordelen */
+function zet(code, waarde){
+  var sc = scansNu();
+  data.laatste = { code:code, vorige: sc[code] === undefined ? null : sc[code], sleutel: sleutelVan(data.werk) };
+  sc[code] = waarde;
+  var l = leerlingMetCode(klasObj(), code);
+  toast = { soort:'ok', tekst: l.naam + ': ' + label(waarde, data.werk.type) };
+  kaart = null;
+  bewaar();
+}
+function verwerk(ruw){
+  var code = String(ruw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) return;
+  var k = klasObj(), w = data.werk, l = leerlingMetCode(k, code);
+  if (!l){
+    var elders = null;
+    data.pakket.klassen.forEach(function(kl){ var x = leerlingMetCode(kl, code); if (x && kl.naam !== w.klas) elders = { kl:kl, x:x }; });
+    toast = { soort:'fout', tekst: elders ? elders.x.naam + ' zit in ' + elders.kl.naam + ', niet in ' + w.klas : 'Code ' + code + ' ken ik niet' };
+    kaart = null; piep(false); render(); return;
+  }
+  var sc = scansNu(), bestond = sc[code] !== undefined;
+  toast = null;
+  if (!bestond && w.modus === 'standaard'){
+    zet(code, w.standaard || 'v');
+    kaart = { code:code, nieuw:true };
+    toast = null;
+  } else {
+    kaart = { code:code, nieuw:false };
+  }
+  if (navigator.vibrate) navigator.vibrate(40);
+  piep(true); render();
+}
+
+var acties = {
+  klas: function(b){ startKlas = b.dataset.k; nieuwFout = ''; },
+  anderklas: function(){ startKlas = null; nieuwFout = ''; },
+  opdracht: function(b){
+    var k = data.pakket.klassen.find(function(x){ return x.naam === startKlas; });
+    var o = k.opdrachten[Number(b.dataset.i)];
+    startWerk(k.naam, o.naam, o.datum, o.type);
+  },
+  nieuw: function(){
+    var naam = schoon((document.getElementById('nnaam') || {}).value);
+    var type = (document.getElementById('ntype') || {}).value || 'vink';
+    var datum = (document.getElementById('ndatum') || {}).value || vandaag();
+    if (!naam){ nieuwFout = 'Geef de opdracht een naam.'; return; }
+    nieuwFout = '';
+    startWerk(startKlas, naam, datum, type);
+  },
+  verder: function(){ scherm = 'scan'; kaart = null; toast = null; },
+  kies: function(b){ if (kaart) zet(kaart.code, b.dataset.w); },
+  sluit: function(){ kaart = null; },
+  open: function(b){ kaart = { code:b.dataset.c, nieuw:false }; toast = null; },
+  openuitafronden: function(b){ scherm = 'scan'; kaart = { code:b.dataset.c, nieuw:false }; toast = null; },
+  undo: function(){
+    var d = data.laatste;
+    if (d && d.sleutel === sleutelVan(data.werk)){
+      var sc = scansNu();
+      if (d.vorige === null) delete sc[d.code]; else sc[d.code] = d.vorige;
+      toast = { soort:'fout', tekst:'Ongedaan gemaakt' };
+      data.laatste = null; bewaar();
+    }
+  },
+  modus: function(){ var w = data.werk; w.modus = w.modus === 'standaard' ? 'kies' : 'standaard'; data.modi[sleutelVan(w)] = { modus:w.modus, standaard:w.standaard }; bewaar(); },
+  stop: function(){ scherm = 'start'; startKlas = null; kaart = null; toast = null; },
+  afronden: function(){ scherm = 'afronden'; kaart = null; toast = null; },
+  terug: function(){ scherm = 'scan'; },
+  deel: function(){ deel(); },
+  download: function(){ download(bouwCsv(), bestandsnaam()); },
+  klaarwis: function(){
+    if (!confirm('Scans van deze opdracht wissen van deze telefoon? Heb je het bestand bewaard?')) return;
+    delete data.scans[sleutelVan(data.werk)]; data.werk = null; data.laatste = null; scherm = 'start'; startKlas = null; bewaar();
+  },
+  geluid: function(){ data.geluid = !data.geluid; bewaar(); },
+  wispakket: function(){
+    if (!confirm('Pakket en alle scans van deze telefoon wissen?')) return;
+    data = { pakket:null, werk:null, scans:{}, modi:{}, geluid:data.geluid, laatste:null }; scherm = 'start'; startKlas = null; bewaar();
+  }
+};
+function startWerk(klas, opdracht, datum, type){
+  var w = { klas:klas, opdracht:opdracht, datum:datum, type:type, modus: type === 'vink' ? 'standaard' : 'kies', standaard:'v' };
+  var m = data.modi[sleutelVan(w)];
+  if (m){ w.modus = m.modus; w.standaard = m.standaard || 'v'; }
+  data.werk = w; scansNu(); scherm = 'scan'; kaart = null; toast = null; bewaar();
+}
+
+function leesPakket(tekst){
+  var p;
+  try { p = JSON.parse(tekst); } catch(e){ throw new Error('Dit is geen lespakket (het bestand is geen JSON).'); }
+  if (!p || p.versie !== 1 || !Array.isArray(p.klassen) || !p.klassen.length) throw new Error('Dit is geen lespakket van de lespakket-maker.');
+  p.klassen.forEach(function(k){
+    if (!k.naam || !Array.isArray(k.leerlingen)) throw new Error('In het pakket mist een klas of leerlingenlijst.');
+    k.leerlingen.forEach(function(l){ l.code = String(l.code || '').toUpperCase(); });
+    k.opdrachten = Array.isArray(k.opdrachten) ? k.opdrachten : [];
+  });
+  return p;
+}
+
+document.addEventListener('click', function(e){
+  var b = e.target.closest('[data-a]');
+  if (!b) return;
+  ontgrendel();
+  var f = acties[b.dataset.a];
+  if (!f) return;
+  f(b);
+  render();
+  setTimeout(focusScan, 0);
+});
+document.addEventListener('change', function(e){
+  if (!e.target || e.target.id !== 'pakketkies' || !e.target.files || !e.target.files[0]) return;
+  var lezer = new FileReader();
+  lezer.onload = function(){
+    try {
+      data.pakket = leesPakket(String(lezer.result));
+      data.werk = null; startKlas = null; nieuwFout = ''; scherm = 'start'; bewaar();
+    } catch(err){ nieuwFout = err.message; }
+    render();
+  };
+  lezer.readAsText(e.target.files[0]);
+});
+document.addEventListener('toggle', function(e){ if (e.target && e.target.id === 'nogdetails') nogOpen = e.target.open; }, true);
+document.addEventListener('keydown', function(e){
+  if (e.target && e.target.id === 'scanveld' && e.key === 'Enter'){
+    e.preventDefault(); var v = e.target.value; e.target.value = ''; verwerk(v);
+  }
+});
+var wacht = null;
+document.addEventListener('input', function(e){
+  if (!e.target || e.target.id !== 'scanveld') return;
+  clearTimeout(wacht);
+  wacht = setTimeout(function(){
+    var v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!v || !data.pakket) return;
+    var bekend = data.pakket.klassen.some(function(k){ return !!leerlingMetCode(k, v); });
+    if (bekend){ e.target.value = ''; verwerk(v); }
+  }, 300);
+});
+document.addEventListener('focusin', zetStatus);
+document.addEventListener('focusout', function(){ setTimeout(zetStatus, 0); });
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) focusScan(); });
+if (data.werk && data.pakket && klasObj()) scherm = 'start';
+render();
+</script>
+</body>
+</html>
